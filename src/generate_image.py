@@ -1,40 +1,27 @@
-import os
 import requests
-import time
+import urllib.parse
 
 def generate_image(prompt):
-    # Using FLUX model - free and working
-    API_URL = "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell"
-    headers = {"Authorization": f"Bearer {os.environ.get('HF_TOKEN')}"}
+    print("Using Pollinations AI (free, no API key)...")
     
-    payload = {
-        "inputs": prompt,
-    }
+    # Encode the prompt for URL
+    encoded_prompt = urllib.parse.quote(prompt)
     
-    # Try up to 5 times (model may need to wake up)
-    for attempt in range(5):
-        print(f"Attempt {attempt + 1}...")
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=120)
-        
-        if response.status_code == 200:
-            with open("generated_image.png", "wb") as f:
-                f.write(response.content)
-            print("Image generated successfully!")
-            return "generated_image.png"
-        elif response.status_code == 503:
-            # Model is loading, wait and retry
-            wait_time = 60
-            print(f"Model is loading, waiting {wait_time} seconds...")
-            time.sleep(wait_time)
-        elif response.status_code == 500:
-            print("Server error, retrying in 30 seconds...")
-            time.sleep(30)
-        else:
-            print(f"Error: {response.status_code}")
-            print(response.text[:500])
-            time.sleep(10)
+    # Pollinations AI - free image generation
+    image_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
     
-    raise Exception("Image generation failed after 5 attempts")
+    print(f"Requesting image...")
+    
+    # Download the image
+    response = requests.get(image_url, timeout=120)
+    
+    if response.status_code == 200:
+        with open("generated_image.png", "wb") as f:
+            f.write(response.content)
+        print("Image generated successfully!")
+        return "generated_image.png"
+    else:
+        raise Exception(f"Image generation failed: {response.status_code}")
 
 if __name__ == "__main__":
-    generate_image("A beautiful sunset over mountains")
+    generate_image("A beautiful sunset over mountains with a person")
