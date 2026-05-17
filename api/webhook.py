@@ -1,27 +1,38 @@
+from http.server import BaseHTTPRequestHandler
 import json
 import os
 import requests
+from urllib.parse import parse_qs, urlparse
 
-def handler(request):
-    """Handle both GET (verification) and POST (webhook) requests"""
-    
-    if request.method == 'GET':
-        # Facebook webhook verification
-        mode = request.args.get('hub.mode')
-        token = request.args.get('hub.verify_token')
-        challenge = request.args.get('hub.challenge')
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Parse query parameters
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        
+        mode = params.get('hub.mode', [None])[0]
+        token = params.get('hub.verify_token', [None])[0]
+        challenge = params.get('hub.challenge', [None])[0]
         
         verify_token = os.environ.get('VERIFY_TOKEN', 'my_verify_token')
         
         if mode == 'subscribe' and token == verify_token:
-            return challenge
-        return 'Forbidden', 403
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(challenge.encode())
+        else:
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'Webhook is running!')
     
-    elif request.method == 'POST':
-        # Handle incoming webhook
+    def do_POST(self):
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        data = json.loads(post_data.decode('utf-8'))
+        
         try:
-            data = request.get_json()
-            
             if data.get('object') == 'page':
                 for entry in data.get('entry', []):
                     for change in entry.get('changes', []):
@@ -34,29 +45,21 @@ def handler(request):
                                 sender_id = value.get('sender_id')
                                 page_id = os.environ.get('FB_PAGE_ID')
                                 
-                                # Don't reply to own comments
                                 if sender_id != page_id and 'PROMPT' in message:
-                                    reply_to_comment(comment_id)
-            
-            return json.dumps({"status": "ok"})
+                                    self.reply_to_comment(comment_id)
         except Exception as e:
             print(f"Error: {e}")
-            return json.dumps({"status": "error"})
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps({"status": "ok"}).encode())
     
-    return 'OK'
-
-def reply_to_comment(comment_id):
-    """Reply to a comment with the prompt"""
-    token = os.environ.get('FB_ACCESS_TOKEN')
-    url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
-    
-    message = "🎨 Thanks for your interest!\n\nThe prompt used for this image will be shared soon!\n\n✨ Follow our page for daily AI art!"
-    
-    payload = {
-        "message": message,
-        "access_token": token
-    }
-    
-    response = requests.post(url, data=payload)
-    print(f"Reply result: {response.json()}")
-    return response.json()
+    def reply_to_comment(self, comment_id):
+        token = os.environ.get('FB_ACCESS_TOKEN')
+        url = f"https://graph.facebook.com/v19.0/{comment_id}/replies"
+        
+        message = "🎨 Thanks for your interest!\n\nFollow our page for daily AI art!"
+        
+        payload = {"message": message, "access_token": token}
+        requests.post(url, data=payload)
